@@ -853,6 +853,13 @@
       .catch(function(err){
         var errs = (err && err.errors) || [err];
         lastFetchError = errs[errs.length - 1] || err;
+        /* Login wall: Cobalt says the video needs a signed-in session.
+           Piped is anonymous too, so it hits the same wall — skip it and
+           answer in ~1s instead of burning the 25s cap on Piped. */
+        for (var i = 0; i < errs.length; i++){
+          var m = String((errs[i] && errs[i].message) || errs[i] || "");
+          if (m.indexOf("error.api.youtube.login") !== -1){ lastFetchError = errs[i]; return Promise.reject(errs[i]); }
+        }
         if (onStage) onStage("backup");
         return fetchPipedDirect(link);
       });
