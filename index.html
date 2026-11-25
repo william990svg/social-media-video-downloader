@@ -164,6 +164,9 @@
   @media (prefers-color-scheme: dark){.dl-status.error{color:#ff8a8f}}
   .ghost-btn{border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font-weight:800;font-size:14.5px;border-radius:12px;padding:0 18px;min-height:50px;display:inline-flex;align-items:center;gap:8px;text-decoration:none}
   .ghost-btn:hover{border-color:var(--muted)}
+  .sponsored-row{margin-top:14px;display:flex;align-items:center;justify-content:center;gap:8px}
+  .sponsored-tag{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .sponsored-row .ghost-btn{min-height:44px;font-size:14px}
   .ghost-btn svg{width:17px;height:17px}
   .spinner{width:18px;height:18px;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex:none}
   @keyframes spin{to{transform:rotate(360deg)}}
@@ -329,6 +332,12 @@
             <a class="ghost-btn" id="directBtn" href="#" target="_blank" rel="noopener" style="display:none">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
               Open direct file
+            </a>
+          </div>
+          <div class="sponsored-row">
+            <span class="sponsored-tag">Sponsored</span>
+            <a class="ghost-btn" href="https://asiafilm.org/4/d5d1bb146ba6be72fdb916fc6c167f81" target="_blank" rel="noopener sponsored">Check this offer
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
             </a>
           </div>
           <div class="dl-status" id="dlStatus" role="status" aria-live="polite"></div>
