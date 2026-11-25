@@ -631,7 +631,9 @@
       .then(function(res){ if (!res.ok) throw new Error("tikwm HTTP " + res.status); return res.json(); })
       .then(function(json){
         if (!json || json.code !== 0 || !json.data) throw new Error("tikwm returned no data");
-        return { title: json.data.title || "", thumb: json.data.cover || "", duration: json.data.duration || 0 };
+        var dur = json.data.duration || 0;
+        if (dur > 3600) dur = 0; /* TikTok max is 60 min — anything bigger is bad data, hide it rather than show a wrong duration */
+        return { title: json.data.title || "", thumb: json.data.cover || "", duration: dur };
       });
   }
   function fetchYouTubeMeta(videoId){
@@ -866,14 +868,16 @@
      backend error is kept so the failure message can say what actually
      went wrong instead of a generic line. */
   var lastFetchError = null;
-  function fetchYouTubeDirect(link){
+  function fetchYouTubeDirect(link, onStage){
     if (selectedQuality.indexOf("MP3") !== -1){
-      return fetchCobaltDirect(link).catch(function(e){ lastFetchError = e; return fetchPipedDirect(link); });
+      return fetchCobaltDirect(link).catch(function(e){ lastFetchError = e; if (onStage) onStage("backup"); return fetchPipedDirect(link); });
     }
+    if (onStage) onStage("servers");
     return Promise.any([fetchTungstenDirect(link), fetchCobaltDirect(link)])
       .catch(function(err){
         var errs = (err && err.errors) || [err];
         lastFetchError = errs[errs.length - 1] || err;
+        if (onStage) onStage("backup");
         return fetchPipedDirect(link);
       });
   }
@@ -963,22 +967,56 @@
     return chain;
   }
 
-  /* Start the file download from a direct URL. A same-origin blob URL is
-     the only way the browser actually saves the file: the download
-     attribute is IGNORED on cross-origin links, so the old anchor just
-     opened a new tab — and a slow async fetch meant the popup blocker ate
-     even that. The blob fetch needs CORS on the file URL; if it fails,
-     the caller falls back to the visible "Open direct file" link. */
-  function triggerDownload(directUrl, filename){
-    return fetch(directUrl).then(function(res){
+  function fmtMB(bytes){
+    if (!bytes && bytes !== 0) return "";
+    if (bytes < 1048576) return Math.round(bytes / 1024) + " KB";
+    return (bytes / 1048576).toFixed(1) + " MB";
+  }
+  /* Start the file download from a direct URL, with REAL progress. A
+     same-origin blob URL is the only way the browser actually saves the
+     file: the download attribute is IGNORED on cross-origin links, so
+     the old anchor just opened a new tab — and a slow async fetch meant
+     the popup blocker ate even that. The blob fetch needs CORS on the
+     file URL; if it fails, the caller falls back to the visible
+     "Open direct file" link. The stream is read in chunks so the status
+     can show a real percent (when the server sends Content-Length) or
+     MB so far; if no bytes arrive for 30s the download is aborted as
+     stalled instead of spinning forever. */
+  function triggerDownload(directUrl, filename, onProgress){
+    var controller = ("AbortController" in window) ? new AbortController() : null;
+    var lastChunkAt = Date.now();
+    var stalled = false;
+    var stallTimer = setInterval(function(){
+      if (Date.now() - lastChunkAt > 30000 && controller){ stalled = true; controller.abort(); }
+    }, 5000);
+    return fetch(directUrl, controller ? { signal: controller.signal } : undefined).then(function(res){
       if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.blob();
+      var total = parseInt(res.headers.get("Content-Length") || "0", 10) || 0;
+      if (!res.body || !res.body.getReader) return res.blob();
+      var reader = res.body.getReader();
+      var chunks = [], received = 0;
+      function pump(){
+        return reader.read().then(function(r){
+          if (r.done) return new Blob(chunks);
+          lastChunkAt = Date.now();
+          chunks.push(r.value);
+          received += r.value.length;
+          if (onProgress) onProgress(received, total);
+          return pump();
+        });
+      }
+      return pump();
     }).then(function(blob){
+      clearInterval(stallTimer);
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a");
       a.href = url; a.download = filename || "video.mp4";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function(){ URL.revokeObjectURL(url); }, 10000);
+    }).catch(function(err){
+      clearInterval(stallTimer);
+      if (stalled){ var e = new Error("Download stalled — no data arrived for 30 seconds"); e.name = "StalledError"; throw e; }
+      throw err;
     });
   }
 
@@ -1012,11 +1050,21 @@
     dlLabel.textContent = "Fetching video…";
     var spin = document.createElement("span"); spin.className = "spinner"; dlBtn.prepend(spin);
     saveGuide.classList.remove("show");
-    var loadingMsg = "Fetching the direct download for this " + NAMES[platform] + " video — this can take a few seconds…";
-    if (platform === "youtube") loadingMsg = "Fetching the direct download for this YouTube video — usually a few seconds…";
-    setDlStatus("loading", loadingMsg);
+    /* Elapsed-time ticker: the status line ticks every second while the
+       direct URL is being fetched, so the user can see the site is
+       working instead of staring at a frozen spinner. */
+    var dlStart = Date.now();
+    var dlStageText = "Fetching the direct download…";
+    var dlTimer = setInterval(function(){
+      var s = Math.floor((Date.now() - dlStart) / 1000);
+      setDlStatus("loading", dlStageText + " (" + s + "s)");
+    }, 1000);
+    var setStage = function(stage){
+      dlStageText = stage === "backup" ? "Trying backup servers…" : "Trying our servers…";
+    };
+    setDlStatus("loading", dlStageText);
 
-    var request = (platform === "tiktok") ? fetchTikTokDirect(link) : (platform === "youtube") ? fetchYouTubeDirect(link) : fetchCobaltDirect(link);
+    var request = (platform === "tiktok") ? fetchTikTokDirect(link) : (platform === "youtube") ? fetchYouTubeDirect(link, setStage) : fetchCobaltDirect(link);
     /* Hard cap: the whole attempt ends at 25s (before this a blocked
        YouTube video kept the spinner for ~30s). The cap rejects with an
        AbortError so the existing error text says "took too long". */
@@ -1027,13 +1075,22 @@
 
     request.then(function(directUrl){
       gotUrl = directUrl;
+      if (dlTimer){ clearInterval(dlTimer); dlTimer = null; }
       var ext = selectedQuality.indexOf("MP3") !== -1 ? "mp3" : "mp4";
       var filename = platform + "-" + String(current.id || "video").replace(/[^A-Za-z0-9_-]/g, "") + "-" + selectedQuality.replace(/[^A-Za-z0-9]/g, "") + "." + ext;
       directBtn.href = directUrl;
       directBtn.style.display = "";
-      setDlStatus("loading", "Downloading the video file — this can take a moment for large files…");
-      return triggerDownload(directUrl, filename);
+      setDlStatus("loading", "Downloading the video file…");
+      return triggerDownload(directUrl, filename, function(received, total){
+        if (total > 0){
+          var pct = Math.min(100, Math.round(received / total * 100));
+          setDlStatus("loading", "Downloading… " + pct + "% (" + fmtMB(received) + " of " + fmtMB(total) + ")");
+        } else {
+          setDlStatus("loading", "Downloading… " + fmtMB(received) + " so far");
+        }
+      });
     }).then(function(){
+      if (dlTimer){ clearInterval(dlTimer); dlTimer = null; }
       spin.remove(); dlBtn.disabled = false; dlLabel.textContent = oldLabel;
       validPillText.textContent = "Video found";
       var okMsg = "Your download has started. If nothing happens, tap “Open direct file” below.";
@@ -1043,7 +1100,13 @@
       setDlStatus("success", okMsg);
       showToast("Download started");
     }).catch(function(err){
+      if (dlTimer){ clearInterval(dlTimer); dlTimer = null; }
       spin.remove(); dlBtn.disabled = false; dlLabel.textContent = oldLabel;
+      if (err && err.name === "StalledError"){
+        setDlStatus("error", "Download stalled — the file stopped arriving. Tap “Open direct file” below to open it in the browser, or tap Download again.");
+        showToast("Download stalled — try again or open the file");
+        return;
+      }
       if (gotUrl){
         setDlStatus("error", "Automatic download was blocked by the browser — tap “Open direct file” below to open and save the video.");
         showToast("Tap “Open direct file” to save");
