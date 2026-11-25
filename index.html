@@ -139,7 +139,8 @@
   .preview img.r-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
   .preview.has-thumb img.r-thumb{display:block}
   .meta{display:flex;flex-direction:column;gap:6px;min-width:0}
-  .meta h3{font-family:"Outfit",sans-serif;font-size:21px;margin:0;font-weight:800;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .meta h3{font-family:"Outfit",sans-serif;font-size:21px;margin:0;font-weight:800}
+  .result-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .valid-pill{display:inline-flex;align-items:center;gap:6px;background:var(--green-soft);color:var(--green);font-size:12.5px;font-weight:800;padding:4px 11px;border-radius:999px;font-family:"Manrope",sans-serif}
   .meta .sub{color:var(--muted);font-size:14px;font-weight:600;word-break:break-all;line-height:1.5}
   .meta .sub b{color:var(--ink2)}
@@ -306,7 +307,7 @@
           <span class="p-type" id="pType">Video</span>
         </div>
         <div class="meta">
-          <h3><span id="rTitle">Video found</span> <span class="valid-pill"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span id="validPillText">Link checked</span></span></h3>
+          <div class="result-head"><h3><span id="rTitle">Video found</span></h3> <span class="valid-pill"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span id="validPillText">Link checked</span></span></div>
           <div class="sub" id="rSub">Platform: <b>YouTube</b> · Type: <b>Video</b></div>
           <div class="sub" id="rUrl" style="font-size:13px"></div>
           <div class="fmt-label">Choose quality</div>
@@ -513,7 +514,7 @@
     facebook: "https://www.facebook.com/watch/?v=10153231379946729"
   };
   var GUIDES = {
-    youtube: ["Tap “Open the video” below — the video opens on YouTube.", "Under the video, tap Download (Premium) or Share → Copy link to keep it.", "Your chosen quality is noted in your recent links, so you can re-fetch it any time."],
+    youtube: ["Tap “Open the video” below — the video opens on YouTube.", "This video is blocked for anonymous downloads — YouTube needs a signed-in session for it, so our servers can't fetch the file.", "Try a different video — many YouTube videos download fine; only some are blocked this way."],
     tiktok: ["Tap “Open the video” below — the video opens in TikTok.", "Tap Share → Save video to store it straight to your gallery.", "For no-watermark copies, creators often pin a clean version — check the comments."],
     instagram: ["Tap “Open the video” below — the Reel opens in Instagram.", "Tap the ⋯ menu → Save, or Share → Download where Instagram offers it.", "Only public accounts work — private Reels can't be fetched."],
     facebook: ["Tap “Open the video” below — the video opens on Facebook.", "Tap Share → Copy link, or the ⋯ menu → Download where Facebook offers it.", "Only public pages and profiles work — friends-only posts can't be fetched."]
@@ -622,7 +623,7 @@
      metadata call never blocks the download — it just means no title. */
   function fmtDuration(sec){
     if (!sec || sec <= 0) return "";
-    sec = Math.round(sec);
+    sec = Math.floor(sec);
     var m = Math.floor(sec / 60), s = sec % 60;
     return m + ":" + (s < 10 ? "0" : "") + s;
   }
@@ -662,6 +663,7 @@
      in the background and fill in when they arrive. Before this the user
      waited ~8s on "Checking link…" while a slow Piped instance timed out. */
   var fetchToken = 0;
+  var metaPending = false;
   function updateResultMeta(meta){
     if (!meta) return;
     if (meta.thumb){
@@ -676,6 +678,7 @@
   form.addEventListener("submit", function(ev){
     ev.preventDefault();
     clearError();
+    toast.classList.remove("show"); clearTimeout(toastTimer);
     var raw = input.value.trim();
     if (!raw){ showError("Paste a video link first — copy it from the app's Share button."); input.focus(); return; }
     var d = detect(raw);
@@ -686,14 +689,20 @@
     }
     var myToken = ++fetchToken;
     current = { platform:d.platform, type:d.type, id:d.id, url:raw, meta:null };
+    metaPending = (d.platform === "tiktok" || d.platform === "youtube");
     renderResult();
-    addRecent(current);
     result.scrollIntoView({ behavior:"smooth", block:"nearest" });
     fetchMeta({ platform:d.platform, url:raw }).then(function(meta){
-      if (myToken !== fetchToken || !meta) return;
+      if (myToken !== fetchToken) return;
+      metaPending = false;
+      if (!meta){ rTitle.textContent = NAMES[current.platform] + " " + current.type.toLowerCase(); return; }
       current.meta = meta;
       updateResultMeta(meta);
-    }).catch(function(){ /* card already shows the generic details */ });
+    }).catch(function(){
+      if (myToken !== fetchToken) return;
+      metaPending = false;
+      rTitle.textContent = NAMES[current.platform] + " " + current.type.toLowerCase();
+    });
   });
 
   function renderResult(){
@@ -714,6 +723,8 @@
       rTitle.textContent = meta.title;
     } else if (p === "instagram" || p === "facebook"){
       rTitle.textContent = NAMES[p] + " " + current.type.toLowerCase() + " — title not available";
+    } else if (metaPending){
+      rTitle.textContent = "Loading video details…";
     } else {
       rTitle.textContent = NAMES[p] + " " + current.type.toLowerCase();
     }
@@ -1047,7 +1058,7 @@
     var link = current.url;
     var oldLabel = dlLabel.textContent;
     dlBtn.disabled = true;
-    dlLabel.textContent = "Fetching video…";
+    dlLabel.textContent = "Fetching download…";
     var spin = document.createElement("span"); spin.className = "spinner"; dlBtn.prepend(spin);
     saveGuide.classList.remove("show");
     /* Elapsed-time ticker: the status line ticks every second while the
@@ -1095,10 +1106,11 @@
       validPillText.textContent = "Video found";
       var okMsg = "Your download has started. If nothing happens, tap “Open direct file” below.";
       if (lastServedQuality && lastServedQuality !== wantedQualityLabel()){
-        okMsg = "Your download has started (" + lastServedQuality + " — the best quality available for this video; " + wantedQualityLabel() + " wasn't available right now). If nothing happens, tap “Open direct file” below.";
+        okMsg = "Your download has started at " + lastServedQuality + " — " + wantedQualityLabel() + " wasn't available for this video, so this is the best available. If nothing happens, tap “Open direct file” below.";
       }
       setDlStatus("success", okMsg);
       showToast("Download started");
+      addRecent(current, servedQualityLabel());
     }).catch(function(err){
       if (dlTimer){ clearInterval(dlTimer); dlTimer = null; }
       spin.remove(); dlBtn.disabled = false; dlLabel.textContent = oldLabel;
@@ -1110,10 +1122,16 @@
       if (gotUrl){
         setDlStatus("error", "Automatic download was blocked by the browser — tap “Open direct file” below to open and save the video.");
         showToast("Tap “Open direct file” to save");
+        addRecent(current, servedQualityLabel());
         return;
       }
       var reason = (err && err.name === "AbortError") ? "the download service took too long to respond" : "the download service couldn't fetch this video";
-      var detail = lastFetchError ? " (" + (lastFetchError.message || lastFetchError) + ")" : "";
+      var detail = "";
+      if (lastFetchError){
+        var m = String(lastFetchError.message || lastFetchError);
+        if (m.indexOf("error.api.youtube.login") !== -1) m = "YouTube blocked this video — it needs a signed-in session to download";
+        detail = " (" + m + ")";
+      }
       setDlStatus("error", "Direct download failed — " + reason + detail + ". Use the save steps below instead.");
       showSaveGuide();
       showToast("Direct download failed — save steps shown below");
@@ -1137,9 +1155,15 @@
 
   /* Recent */
   var recentList = $("recentList"), recentEmpty = $("recentEmpty"), clearBtn = $("clearRecent");
-  function addRecent(item){
+  /* Recent links only records videos whose download actually started
+     (a failed fetch used to be saved as if it worked), and it records
+     the quality that was really served, not the one picked. */
+  function servedQualityLabel(){
+    return (lastServedQuality && lastServedQuality !== wantedQualityLabel()) ? lastServedQuality + " · MP4" : selectedQuality;
+  }
+  function addRecent(item, quality){
     recent = recent.filter(function(r){ return r.url !== item.url; });
-    recent.unshift({ platform:item.platform, type:item.type, url:item.url, quality:selectedQuality });
+    recent.unshift({ platform:item.platform, type:item.type, url:item.url, quality:quality || selectedQuality });
     if (recent.length > 6) recent.pop();
     renderRecent();
   }
@@ -1169,7 +1193,15 @@
   }
   clearBtn.addEventListener("click", function(){ recent = []; renderRecent(); showToast("Recent links cleared"); });
 
-  input.addEventListener("input", clearError);
+  input.addEventListener("input", function(){
+    clearError();
+    /* A new link means the old card/status belong to the old video — hide
+       them so nothing stale is on screen while the user types. */
+    result.classList.remove("show");
+    setDlStatus("", "");
+    toast.classList.remove("show");
+    clearTimeout(toastTimer);
+  });
 })();
 </script>
 <!-- Adsterra SocialBar (SocialBar_1, ID 32457947). Popunder REMOVED 25 Nov 2026: its invisible overlay sat on top of the Fetch/Download buttons and ate the first click, so downloads never started. -->
