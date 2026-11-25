@@ -636,10 +636,12 @@
       preview.classList.add("has-thumb");
     }
     if (meta.title) rTitle.textContent = meta.title;
+      else rTitle.textContent = NAMES[current.platform] + " " + current.type.toLowerCase(); /* title can be empty (e.g. a TikTok video with no caption) — never leave "Loading video details…" stuck */
     if (meta.duration && rSub.textContent.indexOf("Duration") === -1){
       rSub.innerHTML += " · Duration: <b>" + fmtDuration(meta.duration) + "</b>";
     }
   }
+  
   form.addEventListener("submit", function(ev){
     ev.preventDefault();
     clearError();
