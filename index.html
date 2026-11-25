@@ -822,7 +822,9 @@
   function fetchCobaltDirect(link){
     var body = { url: link };
     if (selectedQuality.indexOf("MP3") !== -1){
-      body.isAudioOnly = true;
+      /* Cobalt 11 uses downloadMode:"audio" — isAudioOnly (Cobalt 10)
+         makes Cobalt 11.7 reject the body with error.api.invalid_body. */
+      body.downloadMode = "audio";
       body.audioFormat = "mp3";
     } else {
       var q = selectedQuality.match(/(\d+)p/);
