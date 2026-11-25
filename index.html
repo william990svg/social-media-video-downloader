@@ -136,6 +136,8 @@
   .preview .play svg{width:24px;height:24px;color:#111;margin-left:3px}
   .preview .p-badge{position:absolute;top:12px;left:12px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:800;padding:5px 11px;border-radius:999px;backdrop-filter:blur(4px)}
   .preview .p-type{position:absolute;bottom:12px;right:12px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:800;padding:5px 11px;border-radius:999px}
+  .preview img.r-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
+  .preview.has-thumb img.r-thumb{display:block}
   .meta{display:flex;flex-direction:column;gap:6px;min-width:0}
   .meta h3{font-family:"Outfit",sans-serif;font-size:21px;margin:0;font-weight:800;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .valid-pill{display:inline-flex;align-items:center;gap:6px;background:var(--green-soft);color:var(--green);font-size:12.5px;font-weight:800;padding:4px 11px;border-radius:999px;font-family:"Manrope",sans-serif}
@@ -294,13 +296,14 @@
     <div class="result" id="result">
       <div class="result-grid">
         <div class="preview p-youtube" id="preview">
+          <img class="r-thumb" id="rThumb" alt="" referrerpolicy="no-referrer">
           <span class="p-badge" id="pBadge">YouTube</span>
           <svg class="p-icon" id="pIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.5 12 4.5 12 4.5s-7 0-8.9.6A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12 31 31 0 0 0 1 16.8a3 3 0 0 0 2.1 2.1c1.9.6 8.9.6 8.9.6s7 0 8.9-.6a3 3 0 0 0 2.1-2.1A31 31 0 0 0 23.5 12 31 31 0 0 0 23 7.2ZM9.8 15.5v-7l6 3.5-6 3.5Z"/></svg>
           <span class="play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg></span>
           <span class="p-type" id="pType">Video</span>
         </div>
         <div class="meta">
-          <h3><span id="rTitle">Video found</span> <span class="valid-pill"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Link valid</span></h3>
+          <h3><span id="rTitle">Video found</span> <span class="valid-pill"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span id="validPillText">Link checked</span></span></h3>
           <div class="sub" id="rSub">Platform: <b>YouTube</b> · Type: <b>Video</b></div>
           <div class="sub" id="rUrl" style="font-size:13px"></div>
           <div class="fmt-label">Choose quality</div>
@@ -322,6 +325,10 @@
             <a class="ghost-btn" id="openBtn" href="#" target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
               Open original
+            </a>
+            <a class="ghost-btn" id="directBtn" href="#" target="_blank" rel="noopener" style="display:none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+              Open direct file
             </a>
           </div>
           <div class="dl-status" id="dlStatus" role="status" aria-live="polite"></div>
@@ -472,7 +479,8 @@
       pIcon = $("pIcon"), rTitle = $("rTitle"), rSub = $("rSub"), rUrl = $("rUrl"),
       dlBtn = $("dlBtn"), dlLabel = $("dlLabel"), dlStatus = $("dlStatus"), saveGuide = $("saveGuide"),
       guideTitle = $("guideTitle"), guideSteps = $("guideSteps"), guideOpen = $("guideOpen"),
-      openBtn = $("openBtn"), hintText = $("hintText"), toast = $("toast");
+      openBtn = $("openBtn"), hintText = $("hintText"), toast = $("toast"),
+      rThumb = $("rThumb"), directBtn = $("directBtn"), validPillText = $("validPillText");
 
   var ICONS = {
     youtube: '<path d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.5 12 4.5 12 4.5s-7 0-8.9.6A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12 31 31 0 0 0 1 16.8a3 3 0 0 0 2.1 2.1c1.9.6 8.9.6 8.9.6s7 0 8.9-.6a3 3 0 0 0 2.1-2.1A31 31 0 0 0 23.5 12 31 31 0 0 0 23 7.2ZM9.8 15.5v-7l6 3.5-6 3.5Z"/>',
@@ -598,6 +606,46 @@
     return { error: "This link isn't from TikTok, Instagram, Facebook or YouTube. Check the link and try again." };
   }
 
+  /* Real video info at Fetch time: title + thumbnail + duration.
+     TikTok: tikwm (title + cover). YouTube: Piped /streams (title +
+     thumbnailUrl + duration). Instagram/Facebook have no public
+     metadata source, so they keep the honest placeholder. A failed
+     metadata call never blocks the download — it just means no title. */
+  function fmtDuration(sec){
+    if (!sec || sec <= 0) return "";
+    sec = Math.round(sec);
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+  function fetchTikTokMeta(link){
+    return fetchWithTimeout("https://www.tikwm.com/api/?url=" + encodeURIComponent(link), { method:"GET", headers:{ "Accept":"application/json" } }, 12000)
+      .then(function(res){ if (!res.ok) throw new Error("tikwm HTTP " + res.status); return res.json(); })
+      .then(function(json){
+        if (!json || json.code !== 0 || !json.data) throw new Error("tikwm returned no data");
+        return { title: json.data.title || "", thumb: json.data.cover || "", duration: json.data.duration || 0 };
+      });
+  }
+  function fetchYouTubeMeta(videoId){
+    var tries = PIPED_INSTANCES.slice(0, 3).map(function(base){
+      return fetchWithTimeout(base + "/streams/" + videoId, { method:"GET", headers:{ "Accept":"application/json" } }, 8000)
+        .then(function(res){ if (!res.ok) throw new Error("Piped HTTP " + res.status); return res.json(); })
+        .then(function(json){
+          if (!json || !json.title) throw new Error("Piped returned no title");
+          return { title: json.title, thumb: json.thumbnailUrl || "", duration: json.duration || 0 };
+        });
+    });
+    return Promise.any(tries);
+  }
+  function fetchMeta(d){
+    if (d.platform === "tiktok") return fetchTikTokMeta(d.url);
+    if (d.platform === "youtube"){
+      var vid = extractYouTubeId(d.url);
+      if (!vid) return Promise.resolve(null);
+      return fetchYouTubeMeta(vid);
+    }
+    return Promise.resolve(null);
+  }
+
   /* Fetch */
   form.addEventListener("submit", function(ev){
     ev.preventDefault();
@@ -612,14 +660,22 @@
     }
     fetchBtn.disabled = true;
     fetchLabel.textContent = "Checking link…";
-    setTimeout(function(){
+    current = { platform:d.platform, type:d.type, id:d.id, url:raw, meta:null };
+    fetchMeta({ platform:d.platform, url:raw }).then(function(meta){
       fetchBtn.disabled = false;
       fetchLabel.textContent = "Fetch Video";
-      current = { platform:d.platform, type:d.type, id:d.id, url:raw };
+      current.meta = meta || null;
       renderResult();
       addRecent(current);
       result.scrollIntoView({ behavior:"smooth", block:"nearest" });
-    }, 650);
+    }).catch(function(){
+      fetchBtn.disabled = false;
+      fetchLabel.textContent = "Fetch Video";
+      current.meta = null;
+      renderResult();
+      addRecent(current);
+      result.scrollIntoView({ behavior:"smooth", block:"nearest" });
+    });
   });
 
   function renderResult(){
@@ -628,11 +684,28 @@
     pBadge.textContent = NAMES[p];
     pType.textContent = current.type;
     pIcon.innerHTML = ICONS[p];
-    rTitle.textContent = NAMES[p] + " " + current.type.toLowerCase();
-    rSub.innerHTML = "Platform: <b>" + NAMES[p] + "</b> · Type: <b>" + current.type + "</b>" + (current.id ? " · ID: <b>" + escapeHtml(String(current.id)) + "</b>" : "");
+    var meta = current.meta || null;
+    if (meta && meta.thumb){
+      rThumb.src = meta.thumb;
+      preview.classList.add("has-thumb");
+    } else {
+      rThumb.removeAttribute("src");
+      preview.classList.remove("has-thumb");
+    }
+    if (meta && meta.title){
+      rTitle.textContent = meta.title;
+    } else if (p === "instagram" || p === "facebook"){
+      rTitle.textContent = NAMES[p] + " " + current.type.toLowerCase() + " — title not available";
+    } else {
+      rTitle.textContent = NAMES[p] + " " + current.type.toLowerCase();
+    }
+    validPillText.textContent = "Link checked";
+    rSub.innerHTML = "Platform: <b>" + NAMES[p] + "</b> · Type: <b>" + current.type + "</b>" + (current.id ? " · ID: <b>" + escapeHtml(String(current.id)) + "</b>" : "") + (meta && meta.duration ? " · Duration: <b>" + fmtDuration(meta.duration) + "</b>" : "");
     rUrl.textContent = current.url;
     openBtn.href = current.url;
     guideOpen.href = current.url;
+    directBtn.style.display = "none";
+    directBtn.removeAttribute("href");
     saveGuide.classList.remove("show");
     setDlStatus("", "");
     dlBtn.disabled = false;
@@ -704,13 +777,24 @@
       throw new Error("Download service returned no download URL");
     }
     if (json.status === "picker" && json.picker && json.picker.length){
+      var videos = json.picker.filter(function(it){ return it.type === "video" && it.url; });
+      var pool = videos.length ? videos : json.picker.filter(function(it){ return it.url; });
+      if (!pool.length) throw new Error("Download service returned no download URL");
+      var qnum = function(it){
+        var s = String(it.quality || it.size || it.label || "");
+        var m = s.match(/(\d{3,4})/);
+        return m ? parseInt(m[1], 10) : 0;
+      };
+      var wantNum = parseInt((wantedQualityLabel().match(/(\d+)/) || [0, 0])[1], 10);
       var pick = null;
-      for (var i = 0; i < json.picker.length; i++){
-        if (json.picker[i].type === "video" && json.picker[i].url){ pick = json.picker[i].url; break; }
+      for (var i = 0; i < pool.length; i++){ if (qnum(pool[i]) === wantNum){ pick = pool[i]; break; } }
+      if (!pick){
+        pool.sort(function(a, b){ return qnum(b) - qnum(a); });
+        pick = pool[0];
       }
-      if (!pick) pick = json.picker[0].url;
-      if (pick) return pick;
-      throw new Error("Download service returned no download URL");
+      var served = qnum(pick);
+      lastServedQuality = served ? served + "p" : null;
+      return pick.url;
     }
     if (json.status === "error"){
       var code = json.error && json.error.code ? json.error.code : "unknown error";
@@ -761,15 +845,21 @@
     return postDownload("https://tungsten-7mlu.onrender.com/", { url: link });
   }
 
-  /* YouTube: Tungsten first, then Cobalt, then Piped. MP3 goes to Cobalt
-     (audio-only) then Piped, as before. */
+  /* YouTube: Tungsten and Cobalt in parallel (fastest wins), then Piped.
+     MP3 goes to Cobalt (audio-only) then Piped, as before. The last
+     backend error is kept so the failure message can say what actually
+     went wrong instead of a generic line. */
+  var lastFetchError = null;
   function fetchYouTubeDirect(link){
     if (selectedQuality.indexOf("MP3") !== -1){
-      return fetchCobaltDirect(link).catch(function(){ return fetchPipedDirect(link); });
+      return fetchCobaltDirect(link).catch(function(e){ lastFetchError = e; return fetchPipedDirect(link); });
     }
-    return fetchTungstenDirect(link)
-      .catch(function(){ return fetchCobaltDirect(link); })
-      .catch(function(){ return fetchPipedDirect(link); });
+    return Promise.any([fetchTungstenDirect(link), fetchCobaltDirect(link)])
+      .catch(function(err){
+        var errs = (err && err.errors) || [err];
+        lastFetchError = errs[errs.length - 1] || err;
+        return fetchPipedDirect(link);
+      });
   }
 
   /* YouTube fallback: Piped API instances -> muxed MP4 stream (video + audio).
@@ -851,16 +941,23 @@
     return chain;
   }
 
-  /* Start the file download from a direct URL */
-  function triggerDownload(directUrl){
-    var a = document.createElement("a");
-    a.href = directUrl;
-    a.download = "";
-    a.target = "_blank";
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  /* Start the file download from a direct URL. A same-origin blob URL is
+     the only way the browser actually saves the file: the download
+     attribute is IGNORED on cross-origin links, so the old anchor just
+     opened a new tab — and a slow async fetch meant the popup blocker ate
+     even that. The blob fetch needs CORS on the file URL; if it fails,
+     the caller falls back to the visible "Open direct file" link. */
+  function triggerDownload(directUrl, filename){
+    return fetch(directUrl).then(function(res){
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.blob();
+    }).then(function(blob){
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = filename || "video.mp4";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 10000);
+    });
   }
 
   /* Download -> direct file via API, save guide as fallback */
@@ -879,20 +976,36 @@
 
     var request = (platform === "tiktok") ? fetchTikTokDirect(link) : (platform === "youtube") ? fetchYouTubeDirect(link) : fetchCobaltDirect(link);
     lastServedQuality = null;
+    lastFetchError = null;
+    var gotUrl = null;
 
     request.then(function(directUrl){
+      gotUrl = directUrl;
+      var ext = selectedQuality.indexOf("MP3") !== -1 ? "mp3" : "mp4";
+      var filename = platform + "-" + String(current.id || "video").replace(/[^A-Za-z0-9_-]/g, "") + "-" + selectedQuality.replace(/[^A-Za-z0-9]/g, "") + "." + ext;
+      directBtn.href = directUrl;
+      directBtn.style.display = "";
+      setDlStatus("loading", "Downloading the video file — this can take a moment for large files…");
+      return triggerDownload(directUrl, filename);
+    }).then(function(){
       spin.remove(); dlBtn.disabled = false; dlLabel.textContent = oldLabel;
-      triggerDownload(directUrl);
-      var okMsg = "Your download has started. If nothing happens, check your browser's downloads or pop-up settings, then tap Download again.";
-      if (platform === "youtube" && lastServedQuality && lastServedQuality !== wantedQualityLabel()){
-        okMsg = "Your download has started (" + lastServedQuality + " — the best quality available for this video; " + wantedQualityLabel() + " wasn't available right now). If nothing happens, check your browser's downloads or pop-up settings, then tap Download again.";
+      validPillText.textContent = "Video found";
+      var okMsg = "Your download has started. If nothing happens, tap “Open direct file” below.";
+      if (lastServedQuality && lastServedQuality !== wantedQualityLabel()){
+        okMsg = "Your download has started (" + lastServedQuality + " — the best quality available for this video; " + wantedQualityLabel() + " wasn't available right now). If nothing happens, tap “Open direct file” below.";
       }
       setDlStatus("success", okMsg);
       showToast("Download started");
     }).catch(function(err){
       spin.remove(); dlBtn.disabled = false; dlLabel.textContent = oldLabel;
+      if (gotUrl){
+        setDlStatus("error", "Automatic download was blocked by the browser — tap “Open direct file” below to open and save the video.");
+        showToast("Tap “Open direct file” to save");
+        return;
+      }
       var reason = (err && err.name === "AbortError") ? "the download service took too long to respond" : "the download service couldn't fetch this video";
-      setDlStatus("error", "Direct download failed — " + reason + ". Use the save steps below instead.");
+      var detail = lastFetchError ? " (" + (lastFetchError.message || lastFetchError) + ")" : "";
+      setDlStatus("error", "Direct download failed — " + reason + detail + ". Use the save steps below instead.");
       showSaveGuide();
       showToast("Direct download failed — save steps shown below");
     });
