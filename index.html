@@ -655,7 +655,22 @@
     return Promise.resolve(null);
   }
 
-  /* Fetch */
+  /* Fetch — the card renders IMMEDIATELY with the link's own details;
+     the real title/thumbnail (TikTok via tikwm, YouTube via Piped) load
+     in the background and fill in when they arrive. Before this the user
+     waited ~8s on "Checking link…" while a slow Piped instance timed out. */
+  var fetchToken = 0;
+  function updateResultMeta(meta){
+    if (!meta) return;
+    if (meta.thumb){
+      rThumb.src = meta.thumb;
+      preview.classList.add("has-thumb");
+    }
+    if (meta.title) rTitle.textContent = meta.title;
+    if (meta.duration && rSub.textContent.indexOf("Duration") === -1){
+      rSub.innerHTML += " · Duration: <b>" + fmtDuration(meta.duration) + "</b>";
+    }
+  }
   form.addEventListener("submit", function(ev){
     ev.preventDefault();
     clearError();
@@ -667,24 +682,16 @@
       showError("That link is from " + NAMES[d.platform] + ", but the " + NAMES[selectedTab] + " tab is selected. Switch to “All platforms” or the " + NAMES[d.platform] + " tab.");
       result.classList.remove("show"); return;
     }
-    fetchBtn.disabled = true;
-    fetchLabel.textContent = "Checking link…";
+    var myToken = ++fetchToken;
     current = { platform:d.platform, type:d.type, id:d.id, url:raw, meta:null };
+    renderResult();
+    addRecent(current);
+    result.scrollIntoView({ behavior:"smooth", block:"nearest" });
     fetchMeta({ platform:d.platform, url:raw }).then(function(meta){
-      fetchBtn.disabled = false;
-      fetchLabel.textContent = "Fetch Video";
-      current.meta = meta || null;
-      renderResult();
-      addRecent(current);
-      result.scrollIntoView({ behavior:"smooth", block:"nearest" });
-    }).catch(function(){
-      fetchBtn.disabled = false;
-      fetchLabel.textContent = "Fetch Video";
-      current.meta = null;
-      renderResult();
-      addRecent(current);
-      result.scrollIntoView({ behavior:"smooth", block:"nearest" });
-    });
+      if (myToken !== fetchToken || !meta) return;
+      current.meta = meta;
+      updateResultMeta(meta);
+    }).catch(function(){ /* card already shows the generic details */ });
   });
 
   function renderResult(){
@@ -820,7 +827,7 @@
         method:"POST",
         headers:{ "Accept":"application/json", "Content-Type":"application/json" },
         body: JSON.stringify(body)
-      }, 75000)
+      }, 30000)
       .then(function(res){
         return res.json().catch(function(){ return null; }).then(function(json){
           if (!json) throw new Error("Download service returned an unreadable response (HTTP " + res.status + ")");
@@ -943,10 +950,16 @@
     if (selectedQuality.indexOf("MP3") !== -1) return Promise.reject(new Error("Audio-only is not available for YouTube right now"));
     var videoId = extractYouTubeId(link);
     if (!videoId) return Promise.reject(new Error("Could not read this YouTube link"));
+    /* Instances in parallel batches of 4 (was one-by-one: 15 x 8s = up to
+       2 minutes of waiting). First 8 instances only — the 25s download
+       cap ends the attempt anyway. */
+    var bases = PIPED_INSTANCES.slice(0, 8);
     var chain = Promise.reject(new Error("No Piped instance responded"));
-    PIPED_INSTANCES.forEach(function(base){
-      chain = chain.catch(function(){ return tryPipedInstance(base, videoId); });
-    });
+    for (var i = 0; i < bases.length; i += 4){
+      (function(batch){
+        chain = chain.catch(function(){ return Promise.any(batch.map(function(base){ return tryPipedInstance(base, videoId); })); });
+      })(bases.slice(i, i + 4));
+    }
     return chain;
   }
 
@@ -969,6 +982,26 @@
     });
   }
 
+  /* Hard deadline for a promise — rejects with an AbortError after ms
+     so the download error text can say the service "took too long".
+     The underlying chain keeps running in the background; it just can't
+     change the result shown to the user anymore. */
+  function withDeadline(promise, ms){
+    return new Promise(function(resolve, reject){
+      var done = false;
+      var timer = setTimeout(function(){
+        if (done) return; done = true;
+        var e = new Error("Download attempt timed out after " + Math.round(ms / 1000) + " seconds");
+        e.name = "AbortError"; reject(e);
+      }, ms);
+      promise.then(function(v){
+        if (done) return; done = true; clearTimeout(timer); resolve(v);
+      }, function(e){
+        if (done) return; done = true; clearTimeout(timer); reject(e);
+      });
+    });
+  }
+
   /* Download -> direct file via API, save guide as fallback */
   dlBtn.addEventListener("click", function(){
     if (!current || dlBtn.disabled) return;
@@ -980,10 +1013,14 @@
     var spin = document.createElement("span"); spin.className = "spinner"; dlBtn.prepend(spin);
     saveGuide.classList.remove("show");
     var loadingMsg = "Fetching the direct download for this " + NAMES[platform] + " video — this can take a few seconds…";
-    if (platform === "youtube") loadingMsg = "Fetching the direct download for this YouTube video — the first download can take up to a minute while the server wakes up, then it's fast…";
+    if (platform === "youtube") loadingMsg = "Fetching the direct download for this YouTube video — usually a few seconds…";
     setDlStatus("loading", loadingMsg);
 
     var request = (platform === "tiktok") ? fetchTikTokDirect(link) : (platform === "youtube") ? fetchYouTubeDirect(link) : fetchCobaltDirect(link);
+    /* Hard cap: the whole attempt ends at 25s (before this a blocked
+       YouTube video kept the spinner for ~30s). The cap rejects with an
+       AbortError so the existing error text says "took too long". */
+    request = withDeadline(request, 25000);
     lastServedQuality = null;
     lastFetchError = null;
     var gotUrl = null;
