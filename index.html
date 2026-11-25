@@ -641,8 +641,7 @@
       rSub.innerHTML += " · Duration: <b>" + fmtDuration(meta.duration) + "</b>";
     }
   }
-  
-  form.addEventListener("submit", function(ev){
+    form.addEventListener("submit", function(ev){
     ev.preventDefault();
     clearError();
     toast.classList.remove("show"); clearTimeout(toastTimer);
