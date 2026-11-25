@@ -667,12 +667,51 @@
       });
   }
 
-  /* YouTube / Instagram / Facebook: our own Cobalt API (free Render
-     instance) -> download or stream URL. Cobalt 11 on this instance
-     takes POST / (not /api/json) and needs an Accept: application/json
-     header. Timeout is 75s because the free instance sleeps after
-     15 min idle and takes ~50s to wake. Quality comes from the picker
-     (1080p default); MP3 asks for audio-only. */
+  /* Parse a Cobalt-compatible API response (Cobalt or Tungsten) into a
+     direct download URL. */
+  function parseDownloadResult(json){
+    if (json.status === "tunnel" || json.status === "redirect" || json.status === "stream" || json.status === "local-processing"){
+      if (json.url) return json.url;
+      throw new Error("Download service returned no download URL");
+    }
+    if (json.status === "picker" && json.picker && json.picker.length){
+      var pick = null;
+      for (var i = 0; i < json.picker.length; i++){
+        if (json.picker[i].type === "video" && json.picker[i].url){ pick = json.picker[i].url; break; }
+      }
+      if (!pick) pick = json.picker[0].url;
+      if (pick) return pick;
+      throw new Error("Download service returned no download URL");
+    }
+    if (json.status === "error"){
+      var code = json.error && json.error.code ? json.error.code : "unknown error";
+      throw new Error("Download service error: " + code);
+    }
+    throw new Error("Download service returned an unexpected response");
+  }
+
+  /* POST a download request to a Cobalt-compatible API and return the
+     direct download URL. Timeout is 75s because the free Render
+     instances sleep after 15 min idle and take ~50s to wake. */
+  function postDownload(apiUrl, body){
+    return fetchWithTimeout(apiUrl, {
+        method:"POST",
+        headers:{ "Accept":"application/json", "Content-Type":"application/json" },
+        body: JSON.stringify(body)
+      }, 75000)
+      .then(function(res){
+        return res.json().catch(function(){ return null; }).then(function(json){
+          if (!json) throw new Error("Download service returned an unreadable response (HTTP " + res.status + ")");
+          return json;
+        });
+      })
+      .then(parseDownloadResult);
+  }
+
+  /* Instagram / Facebook: our own Cobalt API (free Render instance) ->
+     download or stream URL. Cobalt 11 takes POST / (not /api/json) and
+     needs an Accept: application/json header. Quality comes from the
+     picker (1080p default); MP3 asks for audio-only. */
   function fetchCobaltDirect(link){
     var body = { url: link };
     if (selectedQuality.indexOf("MP3") !== -1){
@@ -682,37 +721,26 @@
       var q = selectedQuality.match(/(\d+)p/);
       body.videoQuality = q ? q[1] : "1080";
     }
-    return fetchWithTimeout("https://cobalt-api-4453.onrender.com/", {
-        method:"POST",
-        headers:{ "Accept":"application/json", "Content-Type":"application/json" },
-        body: JSON.stringify(body)
-      }, 75000)
-      .then(function(res){
-        return res.json().catch(function(){ return null; }).then(function(json){
-          if (!json) throw new Error("Cobalt returned an unreadable response (HTTP " + res.status + ")");
-          return json;
-        });
-      })
-      .then(function(json){
-        if (json.status === "tunnel" || json.status === "redirect" || json.status === "stream" || json.status === "local-processing"){
-          if (json.url) return json.url;
-          throw new Error("Cobalt returned no download URL");
-        }
-        if (json.status === "picker" && json.picker && json.picker.length){
-          var pick = null;
-          for (var i = 0; i < json.picker.length; i++){
-            if (json.picker[i].type === "video" && json.picker[i].url){ pick = json.picker[i].url; break; }
-          }
-          if (!pick) pick = json.picker[0].url;
-          if (pick) return pick;
-          throw new Error("Cobalt returned no download URL");
-        }
-        if (json.status === "error"){
-          var code = json.error && json.error.code ? json.error.code : "unknown error";
-          throw new Error("Cobalt error: " + code);
-        }
-        throw new Error("Cobalt returned an unexpected response");
-      });
+    return postDownload("https://cobalt-api-4453.onrender.com/", body);
+  }
+
+  /* YouTube first try: our own Tungsten service (free Render instance,
+     yt-dlp based, same Cobalt API contract) -> download URL. Tungsten
+     handles YouTube's bot checks better than Cobalt, but the same video
+     can still be blocked on Render's shared IP. */
+  function fetchTungstenDirect(link){
+    return postDownload("https://tungsten-7mlu.onrender.com/", { url: link });
+  }
+
+  /* YouTube: Tungsten first, then Cobalt, then Piped. MP3 goes to Cobalt
+     (audio-only) then Piped, as before. */
+  function fetchYouTubeDirect(link){
+    if (selectedQuality.indexOf("MP3") !== -1){
+      return fetchCobaltDirect(link).catch(function(){ return fetchPipedDirect(link); });
+    }
+    return fetchTungstenDirect(link)
+      .catch(function(){ return fetchCobaltDirect(link); })
+      .catch(function(){ return fetchPipedDirect(link); });
   }
 
   /* YouTube fallback: Piped API instances -> muxed MP4 stream (video + audio).
@@ -820,7 +848,7 @@
     if (platform === "youtube") loadingMsg = "Fetching the direct download for this YouTube video — the first download can take up to a minute while the server wakes up, then it's fast…";
     setDlStatus("loading", loadingMsg);
 
-    var request = (platform === "tiktok") ? fetchTikTokDirect(link) : (platform === "youtube") ? fetchCobaltDirect(link).catch(function(){ lastServedQuality = null; return fetchPipedDirect(link); }) : fetchCobaltDirect(link);
+    var request = (platform === "tiktok") ? fetchTikTokDirect(link) : (platform === "youtube") ? fetchYouTubeDirect(link) : fetchCobaltDirect(link);
     lastServedQuality = null;
 
     request.then(function(directUrl){
