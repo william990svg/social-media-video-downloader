@@ -552,9 +552,10 @@
       return { platform:"youtube", type:type, id:id };
     }
     if (host.indexOf("tiktok.com") !== -1){
-      var m = path.match(/\/video\/(\d+)/);
       if (host === "vm.tiktok.com" || host === "vt.tiktok.com") return { platform:"tiktok", type:"Video", id:"short link" };
-      return { platform:"tiktok", type:"Video", id: m ? m[1] : null };
+      var m = path.match(/\/video\/(\d+)/);
+      if (!m) return { error: "This TikTok link isn't a video — it looks like a profile link. Open the video, tap Share → Copy link, and paste that." };
+      return { platform:"tiktok", type:"Video", id: m[1] };
     }
     if (host.indexOf("instagram.com") !== -1){
       var im = path.match(/\/(reel|reels|p|tv)\/([A-Za-z0-9_-]+)/);
