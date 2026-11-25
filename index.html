@@ -667,9 +667,14 @@
       });
   }
 
-  /* YouTube / Instagram / Facebook: Cobalt API -> download or stream URL */
+  /* YouTube / Instagram / Facebook: Cobalt API -> download or stream URL.
+     NOTE: the old co.api.cobalt.tools endpoint is dead; api.cobalt.tools
+     is the live one but it now requires an API key/JWT, so Instagram /
+     Facebook direct downloads fall through to the save guide until a
+     self-hosted Cobalt instance is set up. YouTube no longer uses Cobalt
+     at all (see fetchPipedDirect above). */
   function fetchCobaltDirect(link){
-    return fetchWithTimeout("https://co.api.cobalt.tools/", {
+    return fetchWithTimeout("https://api.cobalt.tools/", {
         method:"POST",
         headers:{ "Accept":"application/json", "Content-Type":"application/json" },
         body: JSON.stringify({ url: link })
@@ -702,6 +707,86 @@
       });
   }
 
+  /* YouTube: Piped API instances -> muxed MP4 stream (video + audio).
+     Cobalt's old endpoint is dead and its new one needs a key and has
+     YouTube disabled, so YouTube goes through Piped. Only muxed
+     (videoOnly === false) MP4 streams are used, so the file has sound.
+     If the chosen quality isn't available, the best available muxed
+     quality is used instead and the success note says so. */
+  var PIPED_INSTANCES = [
+    "https://pipedapi.ducks.party",
+    "https://api.piped.private.coffee",
+    "https://pipedapi.kavin.rocks",
+    "https://pipedapi.leptons.xyz",
+    "https://pipedapi.adminforge.de",
+    "https://pipedapi.nosebs.ru",
+    "https://piped-api.privacy.com.de",
+    "https://api.piped.yt",
+    "https://pipedapi.drgns.space",
+    "https://pipedapi.owo.si",
+    "https://pipedapi.reallyaweso.me",
+    "https://pipedapi.darkness.services",
+    "https://pipedapi.orangenet.cc",
+    "https://piped-api.codespace.cz",
+    "https://pipedapi-libre.kavin.rocks"
+  ];
+  var PIPED_QUALITY_RANK = ["1080p", "720p", "480p", "360p", "240p", "144p"];
+  var lastServedQuality = null;
+
+  function extractYouTubeId(link){
+    var m = link.match(/[?&]v=([A-Za-z0-9_-]{11})/) || link.match(/youtu\.be\/([A-Za-z0-9_-]{11})/);
+    if (m) return m[1];
+    var p = link.match(/\/(?:shorts|embed|live|v)\/([A-Za-z0-9_-]{11})/);
+    return p ? p[1] : null;
+  }
+
+  function wantedQualityLabel(){
+    var m = selectedQuality.match(/(\d+p)/);
+    return m ? m[1] : "1080p";
+  }
+
+  function pickMuxedStream(streams, wanted){
+    var muxed = (streams || []).filter(function(s){
+      if (!s || !s.url) return false;
+      if (s.videoOnly) return false;
+      if ((s.quality || "").indexOf("LBRY") === 0) return false;
+      if ((s.url || "").indexOf("odycdn.com") !== -1) return false;
+      var mime = s.mimeType || "";
+      if (mime.indexOf("video/mp4") === -1 && (s.format || "") !== "MPEG_4") return false;
+      return true;
+    });
+    if (!muxed.length) return null;
+    var rank = function(q){ var i = PIPED_QUALITY_RANK.indexOf(q); return i === -1 ? 99 : i; };
+    muxed.sort(function(a, b){ return rank(a.quality) - rank(b.quality); });
+    for (var i = 0; i < muxed.length; i++){ if (muxed[i].quality === wanted) return muxed[i]; }
+    return muxed[0];
+  }
+
+  function tryPipedInstance(base, videoId){
+    return fetchWithTimeout(base + "/streams/" + videoId, { method:"GET", headers:{ "Accept":"application/json" } }, 8000)
+      .then(function(res){
+        if (!res.ok) throw new Error("Piped HTTP " + res.status);
+        return res.json();
+      })
+      .then(function(json){
+        var pick = pickMuxedStream(json.videoStreams, wantedQualityLabel());
+        if (!pick) throw new Error("Piped returned no downloadable stream");
+        lastServedQuality = pick.quality;
+        return pick.url;
+      });
+  }
+
+  function fetchPipedDirect(link){
+    if (selectedQuality.indexOf("MP3") !== -1) return Promise.reject(new Error("Audio-only is not available for YouTube right now"));
+    var videoId = extractYouTubeId(link);
+    if (!videoId) return Promise.reject(new Error("Could not read this YouTube link"));
+    var chain = Promise.reject(new Error("No Piped instance responded"));
+    PIPED_INSTANCES.forEach(function(base){
+      chain = chain.catch(function(){ return tryPipedInstance(base, videoId); });
+    });
+    return chain;
+  }
+
   /* Start the file download from a direct URL */
   function triggerDownload(directUrl){
     var a = document.createElement("a");
@@ -726,12 +811,17 @@
     saveGuide.classList.remove("show");
     setDlStatus("loading", "Fetching the direct download for this " + NAMES[platform] + " video — this can take a few seconds…");
 
-    var request = (platform === "tiktok") ? fetchTikTokDirect(link) : fetchCobaltDirect(link);
+    var request = (platform === "tiktok") ? fetchTikTokDirect(link) : (platform === "youtube") ? fetchPipedDirect(link) : fetchCobaltDirect(link);
+    lastServedQuality = null;
 
     request.then(function(directUrl){
       spin.remove(); dlBtn.disabled = false; dlLabel.textContent = oldLabel;
       triggerDownload(directUrl);
-      setDlStatus("success", "Your download has started. If nothing happens, check your browser's downloads or pop-up settings, then tap Download again.");
+      var okMsg = "Your download has started. If nothing happens, check your browser's downloads or pop-up settings, then tap Download again.";
+      if (platform === "youtube" && lastServedQuality && lastServedQuality !== wantedQualityLabel()){
+        okMsg = "Your download has started (" + lastServedQuality + " — the best quality available for this video; " + wantedQualityLabel() + " wasn't available right now). If nothing happens, check your browser's downloads or pop-up settings, then tap Download again.";
+      }
+      setDlStatus("success", okMsg);
       showToast("Download started");
     }).catch(function(err){
       spin.remove(); dlBtn.disabled = false; dlLabel.textContent = oldLabel;
