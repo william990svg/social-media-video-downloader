@@ -667,18 +667,26 @@
       });
   }
 
-  /* YouTube / Instagram / Facebook: Cobalt API -> download or stream URL.
-     NOTE: the old co.api.cobalt.tools endpoint is dead; api.cobalt.tools
-     is the live one but it now requires an API key/JWT, so Instagram /
-     Facebook direct downloads fall through to the save guide until a
-     self-hosted Cobalt instance is set up. YouTube no longer uses Cobalt
-     at all (see fetchPipedDirect above). */
+  /* YouTube / Instagram / Facebook: our own Cobalt API (free Render
+     instance) -> download or stream URL. Cobalt 11 on this instance
+     takes POST / (not /api/json) and needs an Accept: application/json
+     header. Timeout is 75s because the free instance sleeps after
+     15 min idle and takes ~50s to wake. Quality comes from the picker
+     (1080p default); MP3 asks for audio-only. */
   function fetchCobaltDirect(link){
-    return fetchWithTimeout("https://api.cobalt.tools/", {
+    var body = { url: link };
+    if (selectedQuality.indexOf("MP3") !== -1){
+      body.isAudioOnly = true;
+      body.audioFormat = "mp3";
+    } else {
+      var q = selectedQuality.match(/(\d+)p/);
+      body.videoQuality = q ? q[1] : "1080";
+    }
+    return fetchWithTimeout("https://cobalt-api-4453.onrender.com/", {
         method:"POST",
         headers:{ "Accept":"application/json", "Content-Type":"application/json" },
-        body: JSON.stringify({ url: link })
-      }, 30000)
+        body: JSON.stringify(body)
+      }, 75000)
       .then(function(res){
         return res.json().catch(function(){ return null; }).then(function(json){
           if (!json) throw new Error("Cobalt returned an unreadable response (HTTP " + res.status + ")");
@@ -707,9 +715,8 @@
       });
   }
 
-  /* YouTube: Piped API instances -> muxed MP4 stream (video + audio).
-     Cobalt's old endpoint is dead and its new one needs a key and has
-     YouTube disabled, so YouTube goes through Piped. Only muxed
+  /* YouTube fallback: Piped API instances -> muxed MP4 stream (video + audio).
+     Used only if our Cobalt instance can't fetch the video. Only muxed
      (videoOnly === false) MP4 streams are used, so the file has sound.
      If the chosen quality isn't available, the best available muxed
      quality is used instead and the success note says so. */
@@ -809,9 +816,11 @@
     dlLabel.textContent = "Fetching video…";
     var spin = document.createElement("span"); spin.className = "spinner"; dlBtn.prepend(spin);
     saveGuide.classList.remove("show");
-    setDlStatus("loading", "Fetching the direct download for this " + NAMES[platform] + " video — this can take a few seconds…");
+    var loadingMsg = "Fetching the direct download for this " + NAMES[platform] + " video — this can take a few seconds…";
+    if (platform === "youtube") loadingMsg = "Fetching the direct download for this YouTube video — the first download can take up to a minute while the server wakes up, then it's fast…";
+    setDlStatus("loading", loadingMsg);
 
-    var request = (platform === "tiktok") ? fetchTikTokDirect(link) : (platform === "youtube") ? fetchPipedDirect(link) : fetchCobaltDirect(link);
+    var request = (platform === "tiktok") ? fetchTikTokDirect(link) : (platform === "youtube") ? fetchCobaltDirect(link).catch(function(){ lastServedQuality = null; return fetchPipedDirect(link); }) : fetchCobaltDirect(link);
     lastServedQuality = null;
 
     request.then(function(directUrl){
