@@ -483,7 +483,7 @@
     all: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     youtube: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     tiktok: "https://www.tiktok.com/@tiktok/video/7106594312292453675",
-    instagram: "https://www.instagram.com/reel/C8example/",
+    instagram: "https://www.instagram.com/reel/DfoGE_WtTEU/",
     facebook: "https://www.facebook.com/watch/?v=10153231379946729"
   };
   var GUIDES = {
@@ -807,8 +807,8 @@
   }
 
   /* POST a download request to a Cobalt-compatible API and return the
-     direct download URL. Timeout is 75s because the free Render
-     instances sleep after 15 min idle and take ~50s to wake. */
+     direct download URL. Timeout is 30s (the free Render instances
+     sleep after 15 min idle, but the keep-alive cron keeps them awake). */
   function postDownload(apiUrl, body){
     return fetchWithTimeout(apiUrl, {
         method:"POST",
@@ -860,7 +860,11 @@
       return fetchCobaltDirect(link).catch(function(e){ lastFetchError = e; if (onStage) onStage("backup"); return fetchPipedDirect(link); });
     }
     if (onStage) onStage("servers");
-    return Promise.any([fetchTungstenDirect(link), fetchCobaltDirect(link)])
+    /* Stage 1: our Render servers get 10s. A slow race used to eat the
+       whole attempt (each backend can take 30s), so Piped — the backup
+       that answers in ~2s — never got tried. A timeout here falls
+       through to Piped below, just like a backend error. */
+    return withDeadline(Promise.any([fetchTungstenDirect(link), fetchCobaltDirect(link)]), 10000)
       .catch(function(err){
         var errs = (err && err.errors) || [err];
         lastFetchError = errs[errs.length - 1] || err;
@@ -949,8 +953,8 @@
     var videoId = extractYouTubeId(link);
     if (!videoId) return Promise.reject(new Error("Could not read this YouTube link"));
     /* Instances in parallel batches of 4 (was one-by-one: 15 x 8s = up to
-       2 minutes of waiting). First 8 instances only — the 25s download
-       cap ends the attempt anyway. */
+       2 minutes of waiting). First 8 instances only — worst case two
+       batches x 8s = ~16s, inside the 45s overall cap. */
     var bases = PIPED_INSTANCES.slice(0, 8);
     var chain = Promise.reject(new Error("No Piped instance responded"));
     for (var i = 0; i < bases.length; i += 4){
@@ -1059,10 +1063,13 @@
     setDlStatus("loading", dlStageText);
 
     var request = (platform === "tiktok") ? fetchTikTokDirect(link) : (platform === "youtube") ? fetchYouTubeDirect(link, setStage) : fetchCobaltDirect(link);
-    /* Hard cap: the whole attempt ends at 25s (before this a blocked
-       YouTube video kept the spinner for ~30s). The cap rejects with an
-       AbortError so the existing error text says "took too long". */
-    request = withDeadline(request, 25000);
+    /* Hard cap: the whole attempt ends at 45s. Stages have their own
+       shorter timeouts (Render race 10s, Piped ~16s, Cobalt/TikTok
+       25-30s), so this cap is a safety net, not the thing that kills
+       the backup. (Before: a 25s cap killed the attempt before Piped
+       was ever tried.) The cap rejects with an AbortError so the
+       existing error text says "took too long". */
+    request = withDeadline(request, 45000);
     lastServedQuality = null;
     lastFetchError = null;
     var gotUrl = null;
