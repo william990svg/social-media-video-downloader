@@ -1058,7 +1058,13 @@
       setDlStatus("loading", dlStageText + " (" + s + "s)");
     }, 1000);
     var setStage = function(stage){
-      dlStageText = stage === "backup" ? "Trying backup servers…" : "Trying our servers…";
+      /* Backup stage: our servers couldn't do 1080p, so Piped (360p) is
+         being tried. Say so plainly — otherwise the user just sees a
+         spinner and gives up before the 360p download starts. MP3 keeps
+         the generic line (its backup can't do audio-only). */
+      dlStageText = stage === "backup"
+        ? (selectedQuality.indexOf("MP3") !== -1 ? "Trying backup servers…" : "1080p isn't available — downloading at 360p from the backup server, please wait…")
+        : "Trying our servers…";
     };
     setDlStatus("loading", dlStageText);
 
