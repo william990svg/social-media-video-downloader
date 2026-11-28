@@ -5,7 +5,27 @@
   <script>(function(s){s.dataset.zone='12368355',s.src='https://nap5k.com/tag.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
   <script src="https://5gvci.com/act/files/tag.min.js?z=12368362" data-cfasync="false" async></script>
   <script>(function(s){s.dataset.zone='12368365',s.src='https://al5sm.com/tag.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
-  <script>(function(s){s.dataset.zone='12368367',s.src='https://n6wxm.com/vignette.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
+  <script>
+  /* Monetag Vignette (zone 12368367) — delayed load: the first download is
+     never blocked by the full-screen ad. The script loads only AFTER the
+     user's first successful download, and on later visits (flag stored in
+     localStorage), so the ad appears from the second download onwards. */
+  (function(){
+    var KEY = 'dl-vignette-on';
+    window.__loadVignette = function(){
+      if (window.__vignetteLoaded) return; window.__vignetteLoaded = true;
+      var s = document.createElement('script');
+      s.dataset.zone = '12368367';
+      s.src = 'https://n6wxm.com/vignette.min.js';
+      ([document.documentElement, document.body].filter(Boolean).pop()).appendChild(s);
+    };
+    try { if (localStorage.getItem(KEY)) window.__loadVignette(); } catch(e){}
+    window.__markFirstDownload = function(){
+      try { localStorage.setItem(KEY, '1'); } catch(e){}
+      window.__loadVignette();
+    };
+  })();
+  </script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-TTXTLE65JT"></script>
   <script>
@@ -1121,6 +1141,7 @@
       }
       setDlStatus("success", okMsg);
       showToast("Download started");
+      if (window.__markFirstDownload) window.__markFirstDownload();
       addRecent(current, servedQualityLabel());
     }).catch(function(err){
       if (dlTimer){ clearInterval(dlTimer); dlTimer = null; }
